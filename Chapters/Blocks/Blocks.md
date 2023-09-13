@@ -296,7 +296,7 @@ Bexp2 >> evaluateBlock: aBlock
 	aBlock value
 ```
 
-Then define the methods in class `BExp` that will invoke methods defined in `Bexp2`.
+Then define the methods in class `Bexp` that will invoke methods defined in `Bexp2`.
 
 ```language=pharo
 Bexp >> evaluateBlock: aBlock
@@ -352,4 +352,104 @@ Let's comment `blockLocalTemp` definition: we create a loop that stores the curr
 When we execute this method, we get a collection with 1, 2, and 3. This result shows that each block in the collection refers to a different `temp` variable.
 This is due to the fact that an execution context is created for _each_ block creation (at each loop step) and that the block `[ temp ]` refers to this context.
 
-![`blockLocalTemp` execution](figures/blockClosureLocalTemp)
+![`blockLocalTemp` execution](figures/blockClosureLocalTemp label=blockLocalTempExecution&width=70)
+
+
+
+##### Method allocation.
+
+Now let us create a new method, `blockOutsideTemp`, that is the same as `blockLocalTemp` except that the variable `temp` is a method temporary variable instead of a block variable.
+
+```language=pharo
+Bexp >> blockOutsideTemp
+	| collection temp |
+	collection := OrderedCollection new.
+	#(1 2 3) do: [ :index | 
+		temp := index.
+		collection add: [ temp ] ].
+	^ collection collect: [ :each | each value ]
+```
+
+When we execute the method `blockOutsideTemp`, we now get a collection with 3, 3, and 3. 
+
+```
+> Bexp new blockOutsideTemp asArray
+#(3 3 3)
+```
+
+This result shows that each block in the collection now refers to a single variable `temp` allocated in the `blockOutsideTemp` context leading to the fact that `temp` is shared by the blocks.
+
+
+![`blockClosureOutsideTemp` execution](figures/blockClosureOutsideTemp label=blockClosureOutsideTemp&width=70)
+
+
+
+% ============================================================================
+### Variables can outlive their defining method}
+% ============================================================================
+
+Non-block local variables referred to by a block continue to be accessible and shared with other expressions even if the method execution is terminated. We say that variables _outlive_ the method execution that defined them.
+Let's look at some examples.
+
+##### Method-Block Sharing.
+
+ We start with a simple example showing that a variable is shared between a method and a block (as in the previous experiments in fact). Define the following method `foo` which defines a temporary variable `a`.
+
+```language=pharo
+Bexp >> foo
+	| a |
+	[ a := 0 ] value.
+	^ a
+```
+```	
+> Bexp new foo
+0	
+```
+
+When we execute `Bexp new foo`, we get 0 and not nil.
+What you see here is that the value is shared between the method body and the block.
+ Inside the method body, we can access the variable whose value was set by the block evaluation.
+Both the method and block bodies access the same temporary variable `a`.
+
+Let's make it slightly more complicated. Define the method `twoBlockArray` as follows:
+
+```language=pharo
+Bexp >> twoBlockArray
+	| a |
+	a := 0.
+	^ {[ a := 2] . [a]}
+```
+
+The method `twoBlockArray` defines a temporary variable `a`. It sets the value of `a`
+to zero and returns an array whose first element is a block setting the value of `a` to 2 and second element is a block just returning the value of the temporary variable `a`.
+
+Now we store the array returned by `twoBlockArray` and evaluate the blocks stored in the array. This is what the following code snippet is doing.
+
+```language=pharo
+| res |
+res := Bexp new twoBlockArray.
+res second value. 
+	0
+res first value.
+res second value. 
+	 2
+```
+
+We see that the first block execution modify the variable and that this variable is shared between the two blocks.
+You can also define the code as follows and open a transcript to see the results.
+
+```language=pharo
+| res |
+res := Bexp new twoBlockArray.
+res second value traceCr.
+res first value.
+res second value traceCr.
+```
+Let us step back and look at an *important* point.
+
+- In the previous code snippet when the expressions `res second value` and `res first value` are executed, the method `twoBlockArray` has _already finished its execution_ - as such it is not on the execution stack anymore. Still, the temporary variable `a` can be accessed and set to a new value. This experiment shows that the variables referred to by a block may live longer than the method that created the block that refers to them. We say that the variables _outlive the execution of their defining method_.
+
+ You can see from this example that while temporary variables are somehow stored in an activation context, the implementation is a bit more subtle than that. The block implementation needs to keep referenced variables in a structure that is not in the execution stack but lives on the heap. The compiler performs some analysis and when it detects that a variable may outlive its creation context, it allocates the variables in a structure that is not allocated on the execution stack. 
+
+
+
