@@ -452,4 +452,112 @@ Let us step back and look at an *important* point.
  You can see from this example that while temporary variables are somehow stored in an activation context, the implementation is a bit more subtle than that. The block implementation needs to keep referenced variables in a structure that is not in the execution stack but lives on the heap. The compiler performs some analysis and when it detects that a variable may outlive its creation context, it allocates the variables in a structure that is not allocated on the execution stack. 
 
 
+### Returning from inside a block
+
+In this section, we explain why it is not a good idea to have return statements inside a block (such as `[^ 33]`) that you pass or store into instance variables. A block with an explicit return statement is called a _non-local returning block_. Let us start illustrating some basic points first.
+
+#### Basics on return
+
+By default, the returned value of a method is the receiver of the message i.e. `self`.
+A return expression (the expression starting with the character `^`) allows one to return a different value than the receiver of the message. In addition, the execution of a return statement exits the currently executed method and returns to its caller. This ignores the expressions following the return statement.
+
+### Experiment 7: Return's Exiting Behavior
+
+Define the following method. Executing `Bexp new testExplicitReturn` prints 'one' and 'two' but it will not print `not printed`, since the method `testExplicitReturn` will have returned before.
+
+```language=pharo
+Bexp >> testExplicitReturn
+	self traceCr: 'one'.
+	0 isZero ifTrue: [ self traceCr: 'two'. ^ self].
+	self traceCr: 'not printed'
+```
+
+Note that the return expression should be the last statement of a block body.
+
+
+### Escaping behavior of non-local return
+
+A return expression behaves also like an escaping mechanism since the execution flow will directly jump out to the current invoking method. Let us define a new method `jumpingOut` as follows to illustrate this behavior.
+
+```language=pharo
+Bexp >> jumpingOut
+	#(1 2 3 4) do: [ :each |
+					self traceCr: each printString.
+					each = 3
+						ifTrue: [^ 3] ].
+	^ 42
+```
+
+```	
+> Bexp new jumpingOut
+3
+```
+
+
+For example, the following expression `Bexp new jumpingOut} will return 3 and not 42. `^ 42` will never be reached. The expression `[ ^3 ]` could be deeply nested, its execution jumps out all the levels and returns to the method caller. Some old code (predating the introduction of exceptions) passes non-local returning blocks around leading to complex flows and difficult-to-maintain code. We strongly suggest not using this style because it leads to complex code and bugs.
+In subsequent sections, we will carefully look at where a return is actually returning.
+
+### Understanding return
+Now to see that a return is really escaping the current execution, let us build a slightly more complex call flow. 
+We define four methods among which one (`defineBlock`) creates an escaping block,  one (`arg:`) evaluates this block and one (`evaluatingBlock:`) that executes the block. 
+
+Note that to stress the escaping behavior of a return we defined `evaluatingBlock:` so that it endlessly loops after evaluating its argument.
+
+```language=pharo
+Bexp >> start
+	| res |
+	self traceCr: 'start start'.
+	res := self defineBlock.
+	self traceCr: 'start end'.
+	^ res
+```
+```language=pharo
+Bexp >> defineBlock
+	| res |
+	self traceCr: 'defineBlock start'.
+	res := self arg: [ self traceCr: 'block start'.
+                            1 isZero ifFalse: [ ^ 33 ].
+                            self traceCr: 'block end'. ].
+	self traceCr: 'defineBlock end'.
+	^ res
+```
+```language=pharo
+Bexp >> arg: aBlock
+	| res |
+	self traceCr: 'arg start'.
+	res := self evaluateBlock: aBlock.
+	self traceCr: 'arg end'.
+	^ res
+```
+```language=pharo
+Bexp >> evaluateBlock: aBlock
+	| res |
+	self traceCr: 'evaluateBlock start'.
+	res := self evaluateBlock: aBlock value.
+	self traceCr: 'evaluateBlock loops so should never print that one'.
+	^  res
+```
+
+Executing `Bexp new start`  prints the following (indentation added to stress the calling flow).
+
+```language=pharo
+start start
+   defineBlock start
+      arg start
+         evaluateBlock start
+            block start
+start end
+```
+
+
+
+What we see is that the calling method `start} is fully executed. The method `defineBlock` is not completely executed. Indeed, its escaping block `[^33]` is executed two calls away in the method `evaluateBlock:`. 
+The evaluation of the block returns to the _block home context sender_ (i.e. the context that invoked the method creating the block).
+
+When the return statement of the block is executed in the method `evaluateBlock:}, the execution discards the pending computation and returns to the _method execution point that created the home context of the block_. The block is defined in the method `defineBlock`. The home context of the block is the activation context that represents the definition of the method `defineBlock`. Therefore the return expression returns to the `start} method execution just after the `defineBlock` execution. This is why the pending executions of `arg:` and `evaluateBlock:` are discarded and why we see the execution of the method `start} end.
+
+
+![A block with non-local return execution returns to the method execution that activated the block home context. Frames represent contexts and dashed frames represent the same block at different execution points](figures/nonLocalReturn2 label=nonLocalReturn)
+
+
 
