@@ -226,7 +226,7 @@ Object << #Bexp
 	package: 'BlockExperiment'
 ```
 
-Here the initial value of the variable `t` is 42. The block is created and stored in the instance variable `block` but the value to `t` is changed to 69 before the block is evaluated. And this is the last value (69) that is effectively printed because it is looked up at execution-time. Executing `Bexp new setVariableAndDefineBlock4` prints 69.
+Here the initial value of the variable `t` is 42. The block is created and stored in the instance variable `block` but the value to `t` is changed to 69 before the block is evaluated. And this is the last value (69) that is effectively printed because it is looked up at execution time. Executing `Bexp new setVariableAndDefineBlock4` prints 69.
 
 
 
@@ -261,11 +261,11 @@ Bexp>>evaluateBlockAndIgnoreArgument: arg
 	block value.
 ```
 
-Now executing `Bexp new testArg: 'foo'` prints `'foo'` even if in the method `evaluateBlockAndIgnoreArgument:` the temporary `arg` is redefined. In fact each method invocation has its own values for the arguments.
+Now executing `Bexp new testArg: 'foo'` prints `'foo'` even if in the method `evaluateBlockAndIgnoreArgument:` the temporary `arg` is redefined. In fact, each method invocation has its own values for the arguments.
 
 ### Experiment 6: self binding 
 
-Now we may  wonder if self is also captured.
+Now we may wonder if `self` is also captured.
 To test we need another class. Let's simply define a new class and a couple of methods.
 Add the instance variable `x` to the class `Bexp` and define the `initialize` method as follows:
 
@@ -317,3 +317,39 @@ printed object (`self`) is the original `Bexp` instance that was accessible at t
 
 
 We showed that blocks capture variables that are reached from the context in which the block was defined and not where they are executed. Blocks keep references to variable locations that can be shared between multiple blocks. 
+
+
+
+% ============================================================================
+### Block-local variables
+% ============================================================================
+
+As we saw previously a block is a lexical closure that is connected to the place where it is defined. In the following, we will illustrate this connection by showing that block local variables are allocated in the execution context linked to their creation. 
+We will show the difference when a variable is local to a block or to a method (see Figure *@blockLocalTempExecution@*).
+
+##### Block allocation.
+
+ Implement the following method `blockLocalTemp`.
+
+```language=pharo
+Bexp >> blockLocalTemp
+	| collection |
+	collection := OrderedCollection new.
+	#(1 2 3) do: [ :index |
+		| temp |
+		temp := index.
+		collection add: [ temp ] ].
+	^ collection collect: [ :each | each value ]
+```
+
+Let's comment `blockLocalTemp` definition: we create a loop that stores the current index (a block argument) in a temporary variable `temp` created in the loop. We then store a block that accesses this variable in a collection. After the loop, we execute each accessing block and return the collection of values. 
+
+```
+> Bexp new blockLocalTemp asArray
+#(1 2 3)
+```
+
+When we execute this method, we get a collection with 1, 2, and 3. This result shows that each block in the collection refers to a different `temp` variable.
+This is due to the fact that an execution context is created for _each_ block creation (at each loop step) and that the block `[ temp ]` refers to this context.
+
+![`blockLocalTemp` execution](figures/blockClosureLocalTemp)
