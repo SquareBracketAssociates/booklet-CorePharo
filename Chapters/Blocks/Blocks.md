@@ -218,7 +218,7 @@ This example shows that blocks share the location where variables are stored and
 
 ### Experiment 4: Variable lookup is done at execution time
 
-The following example shows that the value of the variable is looked up at runtime and not copied during the block creation. First add the instance variable `block} to the class `Bexp`.
+The following example shows that the value of the variable is looked up at runtime and not copied during the block creation. First add the instance variable `block` to the class `Bexp`.
 
 ```language=pharo
 Object << #Bexp
@@ -238,6 +238,82 @@ Bexp >> setVariableAndDefineBlock4
 	t := 69.
 	self evaluateBlock: block
 
-Bexp new setVariableAndDefineBlock4 
-> 69.
+> Bexp new setVariableAndDefineBlock4 
+69
 ```
+
+
+
+### Experiment 5: For method arguments.
+
+We can expect that method arguments are bound in the context of the defining method. 
+Let's illustrate this point now. Define the following methods.
+
+```language=pharo
+Bexp>>testArg
+	self testArg: 'foo'.
+
+Bexp>>testArg: arg
+	block := [ arg traceCr ].
+	self evaluateBlockAndIgnoreArgument: 'zork'.
+
+Bexp>>evaluateBlockAndIgnoreArgument: arg
+	block value.
+```
+
+Now executing `Bexp new testArg: 'foo'` prints `'foo'` even if in the method `evaluateBlockAndIgnoreArgument:` the temporary `arg` is redefined. In fact each method invocation has its own values for the arguments.
+
+### Experiment 6: self binding 
+
+Now we may  wonder if self is also captured.
+To test we need another class. Let's simply define a new class and a couple of methods.
+Add the instance variable `x` to the class `Bexp` and define the `initialize` method as follows:
+
+```language=pharo
+Object << #Bexp
+	instanceVariableNames: 'block x'
+	package: 'BlockExperiment'
+```
+```
+Bexp >> initialize
+	super initialize.
+	x := 123.
+```
+
+Define another class named `Bexp2`.
+
+```language=pharo
+Object << #Bexp2
+	slots: { #x };
+	package: 'BlockExperiment'
+```
+```
+Bexp2 >> initialize
+	super initialize.
+	x := 69.
+
+Bexp2 >> evaluateBlock: aBlock
+	aBlock value
+```
+
+Then define the methods in class `BExp` that will invoke methods defined in `Bexp2`.
+
+```language=pharo
+Bexp >> evaluateBlock: aBlock
+	Bexp2 new evaluateBlock: aBlock
+
+Bexp >> evaluateBlock
+	self evaluateBlock: [ self crTrace ; traceCr: x ]
+```
+
+```language=pharo
+> Bexp new evaluateBlock
+a Bexp123  "and not a Bexp269"
+```
+
+Now when we execute `Bexp new evaluateBlock`, we get `a Bexp123` printed in the Transcript 
+showing that a block captures `self` too since an instance of `Bexp2` executed the block but the 
+printed object (`self`) is the original `Bexp` instance that was accessible at the block creation time.
+
+
+We showed that blocks capture variables that are reached from the context in which the block was defined and not where they are executed. Blocks keep references to variable locations that can be shared between multiple blocks. 
